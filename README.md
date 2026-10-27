@@ -20,3 +20,7 @@ make build_web
 make build_android
 make build_ios
 ```
+
+The Android and iOS builds bind `pkg/mobile`: create the core with `NewCore(dataDir)` (on Android, the app's files directory).
+Its errors are JSON objects with `code`, `calendar` and `message` fields.
+The web build uses `cmd/wasm`, which wraps `pkg/api` directly.

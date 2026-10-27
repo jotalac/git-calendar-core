@@ -4,6 +4,7 @@
 package filesystem
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 
@@ -15,22 +16,31 @@ import (
 // DirName is the native data directory under the user's home directory.
 const DirName string = ".git-calendar-data"
 
-// GetFS returns a filesystem rooted at the native application data directory.
+// GetFS returns a filesystem rooted at the native application data directory in the user's home directory.
 func GetFS() (billy.Filesystem, error) {
 	// get user home dir
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, err
 	}
+	return GetFSAt(home)
+}
+
+// GetFSAt returns a filesystem rooted at the application data directory inside dir,
+// for platforms without a usable home directory, such as Android.
+func GetFSAt(dir string) (billy.Filesystem, error) {
+	if dir == "" {
+		return nil, errors.New("data directory cannot be empty")
+	}
 
 	// ensure the directory exists on the real filesystem
-	rootPath := filepath.Join(home, DirName)
+	rootPath := filepath.Join(dir, DirName)
 	if err := os.MkdirAll(rootPath, 0o755); err != nil {
 		return nil, err
 	}
 
-	// base filesystem rooted at home
-	base := osfs.New(home)
+	// base filesystem rooted at dir
+	base := osfs.New(dir)
 	scoped := chroot.New(base, DirName)
 	return scoped, nil
 }

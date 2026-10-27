@@ -18,11 +18,11 @@ mobile_tools:
 
 build_android: mobile_tools
 	mkdir -p $(ANDROID_BUILD_DIR)
-	PATH="$(MOBILE_TOOLS_DIR):$$PATH" $(GO) tool gomobile bind -target=android -androidapi=$(ANDROID_API) -o $(ANDROID_BUILD_DIR)/core.aar ./pkg/api
+	PATH="$(MOBILE_TOOLS_DIR):$$PATH" $(GO) tool gomobile bind -target=android -androidapi=$(ANDROID_API) -o $(ANDROID_BUILD_DIR)/core.aar ./pkg/mobile
 
 build_ios: mobile_tools
 	mkdir -p $(IOS_BUILD_DIR)
-	PATH="$(MOBILE_TOOLS_DIR):$$PATH" $(GO) tool gomobile bind -target=ios -o $(IOS_BUILD_DIR)/Core.xcframework ./pkg/api
+	PATH="$(MOBILE_TOOLS_DIR):$$PATH" $(GO) tool gomobile bind -target=ios -o $(IOS_BUILD_DIR)/Core.xcframework ./pkg/mobile
 
 build_web: wasm_glue
 	GOOS=js GOARCH=wasm $(GO) build -o $(WEB_BUILD_DIR)/core.wasm ./cmd/wasm
@@ -31,11 +31,11 @@ prod_build: prod_build_android prod_build_ios prod_build_web
 
 prod_build_android: mobile_tools
 	mkdir -p $(ANDROID_BUILD_DIR)
-	PATH="$(MOBILE_TOOLS_DIR):$$PATH" $(GO) tool gomobile bind -target=android -androidapi=$(ANDROID_API) -ldflags="-s -w" -o $(ANDROID_BUILD_DIR)/core.aar ./pkg/api
+	PATH="$(MOBILE_TOOLS_DIR):$$PATH" $(GO) tool gomobile bind -target=android -androidapi=$(ANDROID_API) -ldflags="-s -w" -o $(ANDROID_BUILD_DIR)/core.aar ./pkg/mobile
 
 prod_build_ios: mobile_tools
 	mkdir -p $(IOS_BUILD_DIR)
-	PATH="$(MOBILE_TOOLS_DIR):$$PATH" $(GO) tool gomobile bind -target=ios -ldflags="-s -w" -o $(IOS_BUILD_DIR)/Core.xcframework ./pkg/api
+	PATH="$(MOBILE_TOOLS_DIR):$$PATH" $(GO) tool gomobile bind -target=ios -ldflags="-s -w" -o $(IOS_BUILD_DIR)/Core.xcframework ./pkg/mobile
 
 prod_build_web: wasm_glue
 	GOOS=js GOARCH=wasm $(GO) build -ldflags="-s -w" -o $(WEB_BUILD_DIR)/core.wasm ./cmd/wasm

@@ -17,6 +17,7 @@ import (
 	"uuid"
 
 	"github.com/git-calendar/core/pkg/core"
+	"github.com/go-git/go-billy/v5"
 	"github.com/teambition/rrule-go"
 )
 
@@ -27,7 +28,7 @@ const (
 
 // Api wraps core.Core in a binding-friendly API.
 //
-// Api values must be created with NewApi.
+// Api values must be created with NewApi or NewApiWithFS.
 type Api struct {
 	inner *core.Core
 }
@@ -41,6 +42,9 @@ type eventJSON struct {
 
 // NewApi creates a binding-friendly API backed by a new core.Core.
 func NewApi() *Api { return &Api{inner: core.NewCore()} }
+
+// NewApiWithFS creates an API backed by a new core.Core that stores its data in fs.
+func NewApiWithFS(fs billy.Filesystem) *Api { return &Api{inner: core.NewCoreWithFS(fs)} }
 
 // ----------------------------------------- Direct wrapper methods -----------------------------------------
 
