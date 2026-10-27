@@ -63,6 +63,10 @@ func (a *Api) LoadCalendars() error { return a.inner.LoadCalendars() }
 // SetCorsProxy configures the CORS proxy used for remote requests.
 func (a *Api) SetCorsProxy(proxyURL string) error { return a.inner.SetCorsProxy(proxyURL) }
 
+// SetTimeZone sets the IANA time zone used for date-only and other floating iCalendar times.
+// Call it before LoadCalendars; empty means the Go process's local zone (UTC on Android).
+func (a *Api) SetTimeZone(name string) error { return a.inner.SetTimeZone(name) }
+
 // SyncAll synchronizes all configured calendars.
 func (a *Api) SyncAll() error { return a.inner.SyncAll() }
 

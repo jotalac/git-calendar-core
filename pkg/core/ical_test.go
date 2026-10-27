@@ -8,6 +8,7 @@ import (
 	"uuid"
 
 	ics "github.com/arran4/golang-ical"
+	"github.com/git-calendar/core/pkg/errcode"
 	rrule "github.com/teambition/rrule-go"
 )
 
@@ -32,7 +33,7 @@ RRULE:FREQ=WEEKLY;INTERVAL=2;COUNT=4
 END:VEVENT
 END:VCALENDAR`
 
-	events, err := parseICal(strings.NewReader(input), "Work", false)
+	events, err := parseICal(strings.NewReader(input), "Work", false, time.Local)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +100,7 @@ RRULE:FREQ=YEARLY;COUNT=6
 END:VEVENT
 END:VCALENDAR`
 
-	events, err := parseICal(strings.NewReader(input), "Holidays", false)
+	events, err := parseICal(strings.NewReader(input), "Holidays", false, time.Local)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,6 +112,100 @@ END:VCALENDAR`
 	assertICalTime(t, events[0].To, time.Date(2024, 1, 2, 0, 0, 0, 0, time.Local))
 	if events[0].Repeat == nil {
 		t.Fatal("Repeat is nil")
+	}
+}
+
+func TestParseICalReadsFloatingTimesInLocation(t *testing.T) {
+	prague, err := time.LoadLocation("Europe/Prague")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	input := `BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//git-calendar//test//EN
+BEGIN:VEVENT
+UID:wenceslas@example.com
+DTSTART;VALUE=DATE:20260928
+DTEND;VALUE=DATE:20260929
+SUMMARY:St. Wenceslas Day
+END:VEVENT
+BEGIN:VEVENT
+UID:new-year@example.com
+DTSTART;VALUE=DATE:20260101
+SUMMARY:New Year
+RRULE:FREQ=YEARLY;COUNT=2
+END:VEVENT
+BEGIN:VEVENT
+UID:floating@example.com
+DTSTART:20260928T090000
+DTEND:20260928T100000
+SUMMARY:Floating
+END:VEVENT
+BEGIN:VEVENT
+UID:utc@example.com
+DTSTART:20260928T090000Z
+DTEND:20260928T100000Z
+SUMMARY:UTC
+END:VEVENT
+BEGIN:VEVENT
+UID:zoned@example.com
+DTSTART;TZID=America/New_York:20260928T090000
+DTEND;TZID=America/New_York:20260928T100000
+SUMMARY:Zoned
+END:VEVENT
+END:VCALENDAR`
+
+	events, err := parseICal(strings.NewReader(input), "Holidays", false, prague)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 5 {
+		t.Fatalf("got %d events, want 5", len(events))
+	}
+
+	// date-only events run from local midnight to local midnight, also across DST changes
+	assertICalTime(t, events[0].From, time.Date(2026, 9, 28, 0, 0, 0, 0, prague))
+	assertICalTime(t, events[0].To, time.Date(2026, 9, 29, 0, 0, 0, 0, prague))
+	assertICalTime(t, events[1].From, time.Date(2026, 1, 1, 0, 0, 0, 0, prague))
+	assertICalTime(t, events[1].To, time.Date(2026, 1, 2, 0, 0, 0, 0, prague))
+	if next := events[1].Repeat.After(events[1].From, false); !next.Equal(time.Date(2027, 1, 1, 0, 0, 0, 0, prague)) {
+		t.Errorf("next occurrence = %v, want local midnight on 2027-01-01", next)
+	}
+	assertICalTime(t, events[2].From, time.Date(2026, 9, 28, 9, 0, 0, 0, prague))
+	assertICalTime(t, events[2].To, time.Date(2026, 9, 28, 10, 0, 0, 0, prague))
+
+	// absolute times are not affected by location
+	assertICalTime(t, events[3].From, time.Date(2026, 9, 28, 9, 0, 0, 0, time.UTC))
+	assertICalTime(t, events[4].From, time.Date(2026, 9, 28, 13, 0, 0, 0, time.UTC))
+}
+
+func TestSetTimeZone(t *testing.T) {
+	var c Core
+	if got := c.location(); got != time.Local {
+		t.Errorf("default location = %v, want Local", got)
+	}
+
+	if err := c.SetTimeZone("Europe/Prague"); err != nil {
+		t.Fatal(err)
+	}
+	if got := c.location().String(); got != "Europe/Prague" {
+		t.Errorf("location = %q, want Europe/Prague", got)
+	}
+
+	err := c.SetTimeZone("Mars/Olympus_Mons")
+	if code, ok := errcode.CodeOf(err); !ok || code != errcode.Validation {
+		t.Errorf("invalid zone error = %v (code %q), want %s", err, code, errcode.Validation)
+	}
+	if got := c.location().String(); got != "Europe/Prague" {
+		t.Errorf("location after invalid zone = %q, want Europe/Prague", got)
+	}
+
+	if err := c.SetTimeZone(""); err != nil {
+		t.Fatal(err)
+	}
+	if got := c.location(); got != time.Local {
+		t.Errorf("location after reset = %v, want Local", got)
 	}
 }
 
@@ -127,7 +222,7 @@ RRULE:FREQ=WEEKLY;COUNT=4;BYDAY=MO,WE
 END:VEVENT
 END:VCALENDAR`
 
-	events, err := parseICal(strings.NewReader(input), "Work", false)
+	events, err := parseICal(strings.NewReader(input), "Work", false, time.Local)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +281,7 @@ DTEND;TZID=%s:%s
 END:VEVENT
 END:VCALENDAR`, test.tzid, test.start, test.tzid, test.end)
 
-			events, err := parseICal(strings.NewReader(input), "Microsoft", true)
+			events, err := parseICal(strings.NewReader(input), "Microsoft", true, time.Local)
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -2,6 +2,8 @@ package e2e
 
 import (
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -10,6 +12,7 @@ import (
 	"uuid"
 
 	"github.com/git-calendar/core/pkg/core"
+	"github.com/git-calendar/core/pkg/errcode"
 	"github.com/git-calendar/core/pkg/filesystem"
 	gogit "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -113,6 +116,62 @@ func TestCloneCalendarLoadsEventsImmediately(t *testing.T) {
 	}
 	if got.Calendar != "cloned-calendar" {
 		t.Fatalf("cloned event calendar = %q, want %q", got.Calendar, "cloned-calendar")
+	}
+}
+
+func TestCloneCalendarErrorCodes(t *testing.T) {
+	closed := httptest.NewServer(http.NotFoundHandler())
+	closedURL := closed.URL
+	closed.Close()
+
+	tests := []struct {
+		name   string
+		url    string
+		status int
+		want   errcode.Code
+	}{
+		{name: "connection refused", url: closedURL + "/calendar.git", want: errcode.Network},
+		{name: "unauthorized", status: http.StatusUnauthorized, want: errcode.Auth},
+		{name: "forbidden", status: http.StatusForbidden, want: errcode.Forbidden},
+		{name: "rate limited", status: http.StatusTooManyRequests, want: errcode.RateLimit},
+		{name: "server error", status: http.StatusInternalServerError, want: errcode.Network},
+		{name: "missing .git suffix", url: "https://example.com/calendar", want: errcode.Validation},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+
+			rawURL := test.url
+			if test.status != 0 {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.WriteHeader(test.status)
+				}))
+				defer server.Close()
+				rawURL = server.URL + "/calendar.git"
+			}
+			repoURL, err := url.Parse(rawURL)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			c := core.NewCore()
+			err = c.CloneCalendar(repoURL, "", false)
+			if err == nil {
+				t.Fatal("CloneCalendar succeeded, want error")
+			}
+			if code, ok := errcode.CodeOf(err); !ok || code != test.want {
+				t.Errorf("error code = %q (%v), want %q; error: %v", code, ok, test.want, err)
+			}
+
+			calendars, err := c.ListCalendars()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(calendars) != 0 {
+				t.Errorf("failed clone left calendars behind: %+v", calendars)
+			}
+		})
 	}
 }
 

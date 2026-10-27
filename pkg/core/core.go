@@ -32,6 +32,7 @@ type Core struct {
 	calendars    map[string]*Calendar
 	fs           billy.Filesystem // root "/" for OPFS/IDB, "$HOME" for classic FS
 	proxyURL     *url.URL         // cors proxy, that works like https://cors-proxy.abc/https://github.com/... (only needed for the browser!)
+	timeZone     *time.Location   // zone for floating iCalendar times; nil means time.Local
 }
 
 // NewCore creates an initialized Core using the platform filesystem.
@@ -60,6 +61,23 @@ func (c *Core) SetCorsProxy(proxyURL string) error {
 	trimmed := strings.TrimSuffix(proxyURL, "/") // remove trailing "/"
 	c.proxyURL, err = url.ParseRequestURI(trimmed)
 	return err
+}
+
+// SetTimeZone sets the IANA time zone (for example "Europe/Prague") used for floating iCalendar values,
+// such as date-only holidays, so they run from local midnight to local midnight. Empty means time.Local,
+// which is UTC on Android and a fixed offset in browsers, so clients should set it before LoadCalendars.
+func (c *Core) SetTimeZone(name string) error {
+	if name == "" {
+		c.timeZone = nil
+		return nil
+	}
+
+	location, err := time.LoadLocation(name)
+	if err != nil {
+		return errcode.Wrap(errcode.Validation, fmt.Errorf("invalid time zone: %w", err))
+	}
+	c.timeZone = location
+	return nil
 }
 
 // SyncAll tries to synchronize all calendars with its remotes.
@@ -239,6 +257,14 @@ func (c *Core) clearPersistedData() error {
 }
 
 // resetCore clears and reinitializes the in-memory indexes.
+// location returns the zone for floating iCalendar values.
+func (c *Core) location() *time.Location {
+	if c.timeZone == nil {
+		return time.Local
+	}
+	return c.timeZone
+}
+
 func (c *Core) resetCore() {
 	c.intervalTree = NewIntervalTree()
 	c.events = make(map[uuid.UUID]*Event)

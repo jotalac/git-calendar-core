@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/git-calendar/core/pkg/encryption"
+	"github.com/git-calendar/core/pkg/errcode"
 	gogitutil "github.com/go-git/go-billy/v5/util"
 	gogit "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
@@ -157,7 +158,7 @@ func (c *Core) LoadCalendars() error {
 // CloneCalendar clones a remote Git calendar, using CORS proxy, if set.
 func (c *Core) CloneCalendar(repoURL *url.URL, password string, readonly bool) error {
 	if !strings.HasSuffix(repoURL.Path, ".git") {
-		return errors.New(`remote URL must end with ".git"`)
+		return errcode.Wrap(errcode.Validation, errors.New(`remote URL must end with ".git"`))
 	}
 	calendarName := calendarNameFromURL(repoURL)
 	if _, ok := c.calendars[calendarName]; ok {
@@ -193,9 +194,9 @@ func (c *Core) CloneCalendar(repoURL *url.URL, password string, readonly bool) e
 	if err != nil {
 		c.RemoveCalendar(calendarName) // even on error, clone might create a directory, so let's delete it
 		if errors.Is(err, transport.ErrEmptyRemoteRepository) {
-			return fmt.Errorf("git clone failed: %w: maybe you wanted to init instead?", err)
+			return errcode.Wrap(errcode.Validation, fmt.Errorf("git clone failed: %w: maybe you wanted to init instead?", err))
 		}
-		return fmt.Errorf("git clone failed: %w", err)
+		return wrapGitRemoteError(fmt.Errorf("git clone failed: %w", err))
 	}
 
 	var key []byte

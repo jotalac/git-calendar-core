@@ -16,7 +16,8 @@ import (
 // parseICal parses ical events from r to []Event.
 // calendar is copied to each event and used to scope deterministic IDs.
 // When stableIDs is false, each event gets a random ID.
-func parseICal(r io.Reader, calendar string, stableIDs bool) ([]Event, error) {
+// Floating times, including date-only values, are read as wall-clock times in location.
+func parseICal(r io.Reader, calendar string, stableIDs bool, location *time.Location) ([]Event, error) {
 	cal, err := ics.ParseCalendar(r)
 	if err != nil {
 		return nil, fmt.Errorf("parse iCalendar: %w", err)
@@ -26,7 +27,7 @@ func parseICal(r io.Reader, calendar string, stableIDs bool) ([]Event, error) {
 	events := make([]Event, 0, len(sourceEvents))
 	for i, source := range sourceEvents {
 		normalizeTimeZones(source)
-		event, err := parseICalEvent(source, calendar)
+		event, err := parseICalEvent(source, calendar, location)
 		if err != nil {
 			return nil, fmt.Errorf("import event %d: %w", i+1, err)
 		}
@@ -42,13 +43,13 @@ func parseICal(r io.Reader, calendar string, stableIDs bool) ([]Event, error) {
 	return events, nil
 }
 
-func parseICalEvent(source *ics.VEvent, calendar string) (Event, error) {
-	from, err := source.GetStartAt()
+func parseICalEvent(source *ics.VEvent, calendar string, location *time.Location) (Event, error) {
+	from, err := icalTime(source, ics.ComponentPropertyDtStart, location)
 	if err != nil {
 		return Event{}, fmt.Errorf("read DTSTART: %w", err)
 	}
 
-	to, err := icalEventEnd(source, from)
+	to, err := icalEventEnd(source, from, location)
 	if err != nil {
 		return Event{}, err
 	}
@@ -69,9 +70,9 @@ func parseICalEvent(source *ics.VEvent, calendar string) (Event, error) {
 	}, nil
 }
 
-func icalEventEnd(event *ics.VEvent, start time.Time) (time.Time, error) {
+func icalEventEnd(event *ics.VEvent, start time.Time, location *time.Location) (time.Time, error) {
 	if event.HasProperty(ics.ComponentPropertyDtEnd) {
-		end, err := event.GetEndAt()
+		end, err := icalTime(event, ics.ComponentPropertyDtEnd, location)
 		if err != nil {
 			return time.Time{}, fmt.Errorf("read DTEND: %w", err)
 		}
@@ -85,6 +86,28 @@ func icalEventEnd(event *ics.VEvent, start time.Time) (time.Time, error) {
 	}
 
 	return time.Time{}, fmt.Errorf("read DTEND: %w: %s", ics.ErrorPropertyNotFound, ics.ComponentPropertyDtEnd)
+}
+
+// icalTime reads a DATE or DATE-TIME property.
+// Values without "Z" or TZID are floating (RFC 5545 3.3.4, 3.3.5), so a date-only holiday
+// starts at midnight in location rather than at UTC midnight.
+func icalTime(event *ics.VEvent, property ics.ComponentProperty, location *time.Location) (time.Time, error) {
+	value := event.GetProperty(property)
+	if value == nil {
+		return time.Time{}, fmt.Errorf("%w: %s", ics.ErrorPropertyNotFound, property)
+	}
+	if len(value.ICalParameters[string(ics.ParameterTzid)]) == 0 {
+		for _, layout := range []string{"20060102", "20060102T150405"} {
+			if t, err := time.ParseInLocation(layout, value.Value, location); err == nil {
+				return t, nil
+			}
+		}
+	}
+
+	if property == ics.ComponentPropertyDtEnd {
+		return event.GetEndAt()
+	}
+	return event.GetStartAt()
 }
 
 func parseICalRRule(event *ics.VEvent, start time.Time) (*rrule.Set, error) {

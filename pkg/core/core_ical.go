@@ -48,7 +48,7 @@ func (c *Core) ImportICalFile(calendar string, tagID *uuid.UUID, r io.Reader) er
 		return errors.New("calendar repo not initialized")
 	}
 
-	events, err := parseICal(r, calendar, true)
+	events, err := parseICal(r, calendar, true, c.location())
 	if err != nil {
 		return err
 	}
@@ -226,7 +226,7 @@ func (c *Core) fetchICalURL(name string, sourceURL *url.URL) error {
 	if err != nil {
 		return errcode.Wrap(errcode.Network, err)
 	}
-	if _, err := parseICal(bytes.NewReader(data), name, true); err != nil {
+	if _, err := parseICal(bytes.NewReader(data), name, true, c.location()); err != nil {
 		return errcode.Wrap(errcode.Validation, err)
 	}
 	if err := util.WriteFile(c.fs, name+ICalFileSuffix, data, 0o644); err != nil {
@@ -242,7 +242,7 @@ func (c *Core) loadICalFile(name string) error {
 	}
 	defer file.Close()
 
-	events, err := parseICal(file, name, true)
+	events, err := parseICal(file, name, true, c.location())
 	if err != nil {
 		return err
 	}

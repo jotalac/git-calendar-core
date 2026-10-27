@@ -181,6 +181,57 @@ END:VCALENDAR`
 	}
 }
 
+func TestImportICalDateOnlyEventsAreLocalMidnight(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	prague, err := time.LoadLocation("Europe/Prague")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(dateOnlyICalFeed))
+	}))
+	defer server.Close()
+	sourceURL, err := url.Parse(server.URL + "/holidays.ics")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const subscription = "test-ical-date-only-url"
+	const calendar = "test-ical-date-only-file"
+	c := core.NewCore()
+	if err := c.SetTimeZone("Europe/Prague"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.ImportICalURL(subscription, sourceURL); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = c.RemoveCalendar(subscription) })
+	if err := c.CreateCalendar(calendar, ""); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = c.RemoveCalendar(calendar) })
+	if err := c.ImportICalFile(calendar, nil, strings.NewReader(dateOnlyICalFeed)); err != nil {
+		t.Fatal(err)
+	}
+	// reload re-parses the cached subscription and reads the imported event from Git
+	if err := c.LoadCalendars(); err != nil {
+		t.Fatal(err)
+	}
+
+	wantFrom := time.Date(2026, 7, 6, 0, 0, 0, 0, prague)
+	wantTo := time.Date(2026, 7, 7, 0, 0, 0, 0, prague)
+	events := importedEvents(c, "")
+	if len(events) != 2 {
+		t.Fatalf("got %d events, want one per calendar: %+v", len(events), events)
+	}
+	for _, event := range events {
+		if !event.From.Equal(wantFrom) || !event.To.Equal(wantTo) {
+			t.Errorf("%s: event runs %v -> %v, want %v -> %v", event.Calendar, event.From, event.To, wantFrom, wantTo)
+		}
+	}
+}
+
 func TestUpdateICalURL(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
@@ -506,3 +557,14 @@ SUMMARY:%s
 END:VEVENT
 END:VCALENDAR`, title)
 }
+
+const dateOnlyICalFeed = `BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//git-calendar//test//EN
+BEGIN:VEVENT
+UID:jan-hus@example.com
+DTSTART;VALUE=DATE:20260706
+DTEND;VALUE=DATE:20260707
+SUMMARY:Jan Hus Day
+END:VEVENT
+END:VCALENDAR`
