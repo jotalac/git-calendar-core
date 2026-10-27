@@ -14,6 +14,7 @@ import (
 	"github.com/git-calendar/core/pkg/core"
 	"github.com/git-calendar/core/pkg/errcode"
 	"github.com/git-calendar/core/pkg/filesystem"
+	gogitutil "github.com/go-git/go-billy/v5/util"
 	gogit "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
@@ -172,6 +173,55 @@ func TestCloneCalendarErrorCodes(t *testing.T) {
 				t.Errorf("failed clone left calendars behind: %+v", calendars)
 			}
 		})
+	}
+}
+
+// Without a CORS proxy (native clients) the clone used to save the remote without its credentials,
+// so every later sync failed to authenticate.
+func TestCloneCalendarKeepsRemoteCredentials(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	remotePath := filepath.Join(t.TempDir(), "private-calendar.git")
+	repo, err := gogit.PlainInit(remotePath, false)
+	if err != nil {
+		t.Fatalf("failed to initialize source repository: %v", err)
+	}
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("failed to get source worktree: %v", err)
+	}
+	if err := gogitutil.WriteFile(wt.Filesystem, "README.md", []byte("calendar"), 0o644); err != nil {
+		t.Fatalf("failed to write source file: %v", err)
+	}
+	if _, err := wt.Add("README.md"); err != nil {
+		t.Fatalf("failed to stage source file: %v", err)
+	}
+	if _, err := wt.Commit("init", &gogit.CommitOptions{
+		Author: &object.Signature{Name: "Test", When: time.Now()},
+	}); err != nil {
+		t.Fatalf("failed to commit source file: %v", err)
+	}
+
+	c := core.NewCore()
+	remoteURL := &url.URL{Scheme: "file", User: url.UserPassword("user", "secret"), Path: remotePath}
+	if err := c.CloneCalendar(remoteURL, "", false); err != nil {
+		t.Fatalf("failed to clone calendar: %v", err)
+	}
+	t.Cleanup(func() { _ = c.RemoveCalendar("private-calendar") })
+
+	calendars, err := c.ListCalendars()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(calendars) != 1 {
+		t.Fatalf("got %d calendars, want 1", len(calendars))
+	}
+	got, err := calendars[0].RemoteURL()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != remoteURL.String() {
+		t.Errorf("remote URL = %q, want %q with credentials", got, remoteURL.String())
 	}
 }
 
